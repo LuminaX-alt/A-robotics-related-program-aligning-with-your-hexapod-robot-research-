@@ -1,0 +1,519 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <math.h>
+
+#define NUM_LEGS 6
+#define NUM_MOTORS_PER_LEG 3
+#define PI 3.141592653589793
+
+// Define motor positions for each leg
+typedef struct {
+    double angle; // Current motor angle in degrees
+    double target_angle; // Target motor angle
+    double speed; // Speed of the motor in degrees per second
+} Motor;
+
+typedef struct {
+    Motor motors[NUM_MOTORS_PER_LEG];
+} Leg;
+
+typedef struct {
+    Leg legs[NUM_LEGS];
+    double body_tilt[3]; // Roll, pitch, yaw
+    double speed; // Walking speed
+} Hexapod;
+
+// Initialize the hexapod
+void init_hexapod(Hexapod *robot) {
+    for (int i = 0; i < NUM_LEGS; i++) {
+        for (int j = 0; j < NUM_MOTORS_PER_LEG; j++) {
+            robot->legs[i].motors[j].angle = 0;
+            robot->legs[i].motors[j].target_angle = 0;
+            robot->legs[i].motors[j].speed = 30; // degrees per second
+        }
+    }
+    robot->body_tilt[0] = 0; // Roll
+    robot->body_tilt[1] = 0; // Pitch
+    robot->body_tilt[2] = 0; // Yaw
+    robot->speed = 1; // Default walking speed
+}
+
+// Update motor positions
+void update_motors(Hexapod *robot, double delta_time) {
+    for (int i = 0; i < NUM_LEGS; i++) {
+        for (int j = 0; j < NUM_MOTORS_PER_LEG; j++) {
+            Motor *motor = &robot->legs[i].motors[j];
+            double angle_diff = motor->target_angle - motor->angle;
+            double step = motor->speed * delta_time;
+            if (fabs(angle_diff) < step) {
+                motor->angle = motor->target_angle;
+            } else {
+                motor->angle += (angle_diff > 0 ? step : -step);
+            }
+        }
+    }
+}
+
+// Set walking gait for the hexapod
+void set_gait(Hexapod *robot, const double gait_pattern[NUM_LEGS][NUM_MOTORS_PER_LEG]) {
+    for (int i = 0; i < NUM_LEGS; i++) {
+        for (int j = 0; j < NUM_MOTORS_PER_LEG; j++) {
+            robot->legs[i].motors[j].target_angle = gait_pattern[i][j];
+        }
+    }
+}
+
+// Print the current state of the hexapod
+void print_hexapod_state(const Hexapod *robot) {
+    printf("\nHexapod State:\n");
+    printf("Body Tilt: Roll=%.2f, Pitch=%.2f, Yaw=%.2f\n",
+           robot->body_tilt[0], robot->body_tilt[1], robot->body_tilt[2]);
+    for (int i = 0; i < NUM_LEGS; i++) {
+        printf("Leg %d: ", i + 1);
+        for (int j = 0; j < NUM_MOTORS_PER_LEG; j++) {
+            printf("Motor %d Angle=%.2f ", j + 1, robot->legs[i].motors[j].angle);
+        }
+        printf("\n");
+    }
+}
+
+// Simulate one step in the hexapod movement
+void simulate_step(Hexapod *robot, double delta_time) {
+    update_motors(robot, delta_time);
+    print_hexapod_state(robot);
+}
+
+// Generate a simple gait pattern for walking
+void generate_gait_pattern(double gait_pattern[NUM_LEGS][NUM_MOTORS_PER_LEG]) {
+    for (int i = 0; i < NUM_LEGS; i++) {
+        for (int j = 0; j < NUM_MOTORS_PER_LEG; j++) {
+            gait_pattern[i][j] = sin((2 * PI * i / NUM_LEGS) + j * PI / 2) * 45; // Generate some movement
+        }
+    }
+}
+
+int main() {
+    Hexapod robot;
+    init_hexapod(&robot);
+
+    double gait_pattern[NUM_LEGS][NUM_MOTORS_PER_LEG];
+    generate_gait_pattern(gait_pattern);
+    set_gait(&robot, gait_pattern);
+
+    printf("Simulating Hexapod Robot\n");
+
+    // Simulate for 10 seconds with a time step of 0.1 seconds
+    double total_time = 10.0;
+    double delta_time = 0.1;
+    for (double t = 0; t < total_time; t += delta_time) {
+        simulate_step(&robot, delta_time);
+    }
+
+    printf("Simulation Complete.\n");
+    return 0;
+}
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+
+#define MEMORY_SIZE 1024 // Total memory size in bytes
+#define BLOCK_SIZE 64    // Size of each block in bytes
+
+typedef struct {
+    bool is_allocated;
+    size_t size;
+    void *start_address;
+} MemoryBlock;
+
+MemoryBlock memory_blocks[MEMORY_SIZE / BLOCK_SIZE];
+void *memory_pool;
+
+// Initialize the memory pool
+void initialize_memory() {
+    memory_pool = malloc(MEMORY_SIZE);
+    if (!memory_pool) {
+        printf("Failed to allocate memory pool!\n");
+        exit(1);
+    }
+
+    for (int i = 0; i < MEMORY_SIZE / BLOCK_SIZE; i++) {
+        memory_blocks[i].is_allocated = false;
+        memory_blocks[i].size = BLOCK_SIZE;
+        memory_blocks[i].start_address = (char *)memory_pool + i * BLOCK_SIZE;
+    }
+
+    printf("Memory pool of %d bytes initialized.\n", MEMORY_SIZE);
+}
+
+// Allocate memory from the pool
+void *allocate_memory(size_t size) {
+    if (size > MEMORY_SIZE) {
+        printf("Error: Requested size exceeds total memory size.\n");
+        return NULL;
+    }
+
+    int blocks_needed = (size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    int free_blocks = 0;
+
+    for (int i = 0; i < MEMORY_SIZE / BLOCK_SIZE; i++) {
+        if (!memory_blocks[i].is_allocated) {
+            free_blocks++;
+            if (free_blocks == blocks_needed) {
+                int start_index = i - blocks_needed + 1;
+                for (int j = start_index; j <= i; j++) {
+                    memory_blocks[j].is_allocated = true;
+                }
+
+                printf("Allocated %d bytes from block %d to block %d.\n", size, start_index, i);
+                return memory_blocks[start_index].start_address;
+            }
+        } else {
+            free_blocks = 0;
+        }
+    }
+
+    printf("Error: Insufficient contiguous memory to allocate %zu bytes.\n", size);
+    return NULL;
+}
+
+// Free allocated memory
+void free_memory(void *ptr) {
+    for (int i = 0; i < MEMORY_SIZE / BLOCK_SIZE; i++) {
+        if (memory_blocks[i].start_address == ptr && memory_blocks[i].is_allocated) {
+            printf("Freeing memory at block %d.\n", i);
+            memory_blocks[i].is_allocated = false;
+        }
+    }
+}
+
+// Display memory status
+void display_memory_status() {
+    printf("\nMemory Status:\n");
+    for (int i = 0; i < MEMORY_SIZE / BLOCK_SIZE; i++) {
+        printf("Block %d: %s\n", i, memory_blocks[i].is_allocated ? "Allocated" : "Free");
+    }
+    printf("\n");
+}
+
+int main() {
+    initialize_memory();
+
+    void *ptr1 = allocate_memory(128);
+    display_memory_status();
+
+    void *ptr2 = allocate_memory(256);
+    display_memory_status();
+
+    free_memory(ptr1);
+    display_memory_status();
+
+    void *ptr3 = allocate_memory(64);
+    display_memory_status();
+
+    free_memory(ptr2);
+    free_memory(ptr3);
+    display_memory_status();
+
+    free(memory_pool); // Clean up allocated memory pool
+    printf("Memory pool deallocated.\n");
+
+    return 0;
+}
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+
+void display_menu() {
+    printf("\nUtility Program Menu:\n");
+    printf("1. Create a File\n");
+    printf("2. Write to a File\n");
+    printf("3. Read from a File\n");
+    printf("4. Delete a File\n");
+    printf("5. Calculator\n");
+    printf("6. Exit\n");
+    printf("Choose an option: ");
+}
+
+void create_file() {
+    char filename[100];
+    printf("Enter the filename to create: ");
+    scanf("%s", filename);
+
+    FILE *file = fopen(filename, "w");
+    if (file == NULL) {
+        printf("Error creating file!\n");
+        return;
+    }
+
+    printf("File '%s' created successfully.\n", filename);
+    fclose(file);
+}
+
+void write_to_file() {
+    char filename[100], content[1024];
+    printf("Enter the filename to write to: ");
+    scanf("%s", filename);
+
+    FILE *file = fopen(filename, "a");
+    if (file == NULL) {
+        printf("Error opening file!\n");
+        return;
+    }
+
+    printf("Enter content to write: ");
+    getchar(); // Consume the leftover newline character
+    fgets(content, sizeof(content), stdin);
+
+    fprintf(file, "%s", content);
+    printf("Content written to '%s'.\n", filename);
+    fclose(file);
+}
+
+void read_from_file() {
+    char filename[100], content[1024];
+    printf("Enter the filename to read from: ");
+    scanf("%s", filename);
+
+    FILE *file = fopen(filename, "r");
+    if (file == NULL) {
+        printf("Error opening file!\n");
+        return;
+    }
+
+    printf("Content of '%s':\n", filename);
+    while (fgets(content, sizeof(content), file) != NULL) {
+        printf("%s", content);
+    }
+    fclose(file);
+}
+
+void delete_file() {
+    char filename[100];
+    printf("Enter the filename to delete: ");
+    scanf("%s", filename);
+
+    if (remove(filename) == 0) {
+        printf("File '%s' deleted successfully.\n", filename);
+    } else {
+        printf("Error deleting file!\n");
+    }
+}
+
+void calculator() {
+    double num1, num2, result;
+    char operator;
+
+    printf("Enter an expression (e.g., 5 + 3): ");
+    scanf("%lf %c %lf", &num1, &operator, &num2);
+
+    switch (operator) {
+        case '+':
+            result = num1 + num2;
+            printf("Result: %.2lf\n", result);
+            break;
+        case '-':
+            result = num1 - num2;
+            printf("Result: %.2lf\n", result);
+            break;
+        case '*':
+            result = num1 * num2;
+            printf("Result: %.2lf\n", result);
+            break;
+        case '/':
+            if (num2 != 0) {
+                result = num1 / num2;
+                printf("Result: %.2lf\n", result);
+            } else {
+                printf("Error: Division by zero!\n");
+            }
+            break;
+        default:
+            printf("Invalid operator!\n");
+            break;
+    }
+}
+
+int main() {
+    int choice;
+
+    while (true) {
+        display_menu();
+        scanf("%d", &choice);
+
+        switch (choice) {
+            case 1:
+                create_file();
+                break;
+            case 2:
+                write_to_file();
+                break;
+            case 3:
+                read_from_file();
+                break;
+            case 4:
+                delete_file();
+                break;
+            case 5:
+                calculator();
+                break;
+            case 6:
+                printf("Exiting program. Goodbye!\n");
+                return 0;
+            default:
+                printf("Invalid choice. Please try again.\n");
+        }
+    }
+
+    return 0;
+}
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+
+void display_menu() {
+    printf("\nUtility Program Menu:\n");
+    printf("1. Create a File\n");
+    printf("2. Write to a File\n");
+    printf("3. Read from a File\n");
+    printf("4. Delete a File\n");
+    printf("5. Calculator\n");
+    printf("6. Exit\n");
+    printf("Choose an option: ");
+}
+
+void create_file() {
+    char filename[100];
+    printf("Enter the filename to create: ");
+    scanf("%s", filename);
+
+    FILE *file = fopen(filename, "w");
+    if (file == NULL) {
+        printf("Error creating file!\n");
+        return;
+    }
+
+    printf("File '%s' created successfully.\n", filename);
+    fclose(file);
+}
+
+void write_to_file() {
+    char filename[100], content[1024];
+    printf("Enter the filename to write to: ");
+    scanf("%s", filename);
+
+    FILE *file = fopen(filename, "a");
+    if (file == NULL) {
+        printf("Error opening file!\n");
+        return;
+    }
+
+    printf("Enter content to write: ");
+    getchar(); // Consume the leftover newline character
+    fgets(content, sizeof(content), stdin);
+
+    fprintf(file, "%s", content);
+    printf("Content written to '%s'.\n", filename);
+    fclose(file);
+}
+
+void read_from_file() {
+    char filename[100], content[1024];
+    printf("Enter the filename to read from: ");
+    scanf("%s", filename);
+
+    FILE *file = fopen(filename, "r");
+    if (file == NULL) {
+        printf("Error opening file!\n");
+        return;
+    }
+
+    printf("Content of '%s':\n", filename);
+    while (fgets(content, sizeof(content), file) != NULL) {
+        printf("%s", content);
+    }
+    fclose(file);
+}
+
+void delete_file() {
+    char filename[100];
+    printf("Enter the filename to delete: ");
+    scanf("%s", filename);
+
+    if (remove(filename) == 0) {
+        printf("File '%s' deleted successfully.\n", filename);
+    } else {
+        printf("Error deleting file!\n");
+    }
+}
+
+void calculator() {
+    double num1, num2, result;
+    char operator;
+
+    printf("Enter an expression (e.g., 5 + 3): ");
+    scanf("%lf %c %lf", &num1, &operator, &num2);
+
+    switch (operator) {
+        case '+':
+            result = num1 + num2;
+            printf("Result: %.2lf\n", result);
+            break;
+        case '-':
+            result = num1 - num2;
+            printf("Result: %.2lf\n", result);
+            break;
+        case '*':
+            result = num1 * num2;
+            printf("Result: %.2lf\n", result);
+            break;
+        case '/':
+            if (num2 != 0) {
+                result = num1 / num2;
+                printf("Result: %.2lf\n", result);
+            } else {
+                printf("Error: Division by zero!\n");
+            }
+            break;
+        default:
+            printf("Invalid operator!\n");
+            break;
+    }
+}
+
+int main() {
+    int choice;
+
+    while (true) {
+        display_menu();
+        scanf("%d", &choice);
+
+        switch (choice) {
+            case 1:
+                create_file();
+                break;
+            case 2:
+                write_to_file();
+                break;
+            case 3:
+                read_from_file();
+                break;
+            case 4:
+                delete_file();
+                break;
+            case 5:
+                calculator();
+                break;
+            case 6:
+                printf("Exiting program. Goodbye!\n");
+                return 0;
+            default:
+                printf("Invalid choice. Please try again.\n");
+        }
+    }
+
+    return 0;
+}
